@@ -55,4 +55,25 @@ router.get("/snapshots/:address/latest", async (req: Request, res: Response) => 
   res.json(snapshot);
 });
 
+// Snapshot nearest to a given timestamp — used for delta comparisons (1d, 7d, 30d)
+router.get("/snapshots/:address/nearest", async (req: Request, res: Response) => {
+  const { address } = req.params;
+  const t = Number(req.query.t);
+  if (!t) return res.status(400).json({ error: "t param required (unix ms)" });
+
+  // Search within a ±2h window around the target to keep the query fast
+  const WINDOW = 2 * 60 * 60 * 1000;
+  const candidates = await Snapshot.find({
+    poolAddress: address,
+    timestamp: { $gte: t - WINDOW, $lte: t + WINDOW },
+  }).lean();
+
+  if (candidates.length === 0) return res.status(404).json({ error: "No snapshot near that time" });
+
+  const nearest = candidates.reduce((best, s) =>
+    Math.abs(s.timestamp - t) < Math.abs(best.timestamp - t) ? s : best
+  );
+  res.json(nearest);
+});
+
 export default router;
